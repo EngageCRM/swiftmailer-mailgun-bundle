@@ -15,19 +15,19 @@ class MailgunTransport implements Swift_Transport
     /**
      * @var \Mailgun\Mailgun mailgun
      */
-    private $mailgun;
+    protected $mailgun;
 
     /**
      * @var string domain
      */
-    private $domain;
+    protected $domain;
 
     /**
      * The event dispatcher from the plugin API.
      *
      * @var \Swift_Events_EventDispatcher eventDispatcher
      */
-    private $eventDispatcher;
+    protected $eventDispatcher;
 
     /**
      * @param \Swift_Events_EventDispatcher $eventDispatcher
@@ -80,11 +80,12 @@ class MailgunTransport implements Swift_Transport
      * The return value is the number of recipients who were accepted for delivery.
      *
      * @param Swift_Mime_Message $message
-     * @param string[]           $failedRecipients An array of failures by-reference
+     * @param string[] $failedRecipients An array of failures by-reference
      *
      * @throws \Swift_TransportException
-     * 
+     *
      * @return int number of mails sent
+     * @throws \Exception
      */
     public function send(Swift_Mime_Message $message, &$failedRecipients = null)
     {
@@ -109,8 +110,8 @@ class MailgunTransport implements Swift_Transport
             $resultStatus = Swift_Events_SendEvent::RESULT_SUCCESS;
         } catch (\Exception $e) {
             $failedRecipients = $postData['to'];
-            $sent = 0;
-            $resultStatus = Swift_Events_SendEvent::RESULT_FAILED;
+            // Re-raise the exception so we're consistent with SwiftMailer's normal behaviour
+            throw $e;
         }
 
         if ($evt) {
@@ -136,6 +137,7 @@ class MailgunTransport implements Swift_Transport
      * Looks at the message headers to find post data.
      *
      * @param Swift_Mime_Message $message
+     * @return array
      */
     protected function getPostData(Swift_Mime_Message $message)
     {
@@ -146,10 +148,12 @@ class MailgunTransport implements Swift_Transport
         $messageHeaders = $message->getHeaders();
 
         foreach ($mailgunHeaders as $headerName) {
-            /** @var \Swift_Mime_Headers_MailboxHeader $value */
-            if (null !== $value = $messageHeaders->get($headerName)) {
-                $postData[$headerName] = $value->getFieldBody();
-                $messageHeaders->removeAll($headerName);
+            $headersByName = $messageHeaders->getAll($headerName);
+            if (!empty($headersByName)) {
+                /** @var \Swift_Mime_Headers_MailboxHeader $value */
+                foreach ($headersByName as $value) {
+                    $postData[$headerName][] = $value->getFieldBody();
+                }
             }
         }
 
